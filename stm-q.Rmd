@@ -1,0 +1,164 @@
+---
+title: 'Problem Set 4: Topic Modeling'
+author: 'Your name here: '
+date: "Due Friday April 15, 2022 by midnight"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+
+\noindent Please upload answers to all questions (including computational questions and any related graphics and R code \emph{with comments}, in .rmd and knitted pdf forms to Canvas. For any problems that require calculations, please show your work. Finally, when doing simulations or draws from a random distribution in \texttt{R}, please set your seed immediately using \texttt{set.seed(2018)}.
+
+# Structural Topic Model
+
+This problem set is meant to provide a brief overview of the `stm` (structural topic model) package. 
+
+Structural topic modeling is a way to estimate a topic model that includes document-level meta-data. One can then see how topical prevalence changes according to that meta-data.
+
+Required packages:
+
+```{r}
+library(stm)
+library(tidyverse)
+```
+
+
+## Question 1
+
+The data you'll be using for this problem set consists of all articles about women published in the New York Times and Washington Post, 1980-2014. 
+
+Load the dataset `women-full.csv`. Notice that you have the text of the articles, along with some metadata.
+
+
+STM has its own unique preprocessing functions and procedure. 
+
+The main text you'll be focusing on is the `women$TEXT.NO.NOUN` column, which contains all the text of the articles without proper nouns (previously removed). Use the function `textProcessor` on the text (with metadata=`women`) to preprocess the data, then pull out the `meta`, `vocab`, and `documents` items. You can then use the `prepDocuments` function on the pulled out `meta`,`vocab`,`documents` objects to prepare documents in correct format for analysis with `stm` (make sure to consult the help files on these functions).
+
+```{r}
+
+# read in file
+women <-read.csv("women-full.csv") 
+
+# pre process data
+women_pp <- textProcessor(documents = women$TEXT.NO.NOUN, metadata = women)
+
+# extract factors
+women_prep <- prepDocuments(document = women_pp$documents, vocab = women_pp$vocab, meta = women_pp$meta)
+doc <- women_prep$documents
+voc <- women_prep$vocab
+meta <- women_prep$meta
+
+```
+
+
+
+## Question 2
+
+Estimate a topic model with 15 topics by regressing topical prevalence on `REGION` and `s(YEAR)` covariates. Note that we use `s()` wrapper on year to specify smooth terms for B-spline basis expansion. 
+
+Running full model takes a **long** time to finish. For that reason, add an argument `max.em.its` which sets the number of iterations. By keeping it low (15) you'll see a rough estimate of the topics. You can always go back and change this value to estimate the model until its convergence. Save the fitted model as `model`.
+
+Use the following tools to evaluate your model:
+
+- `labelTopics` gives the top words for each topic. 
+- `findThoughts` gives the top documents for each topic (the documents with the highest proportion of each topic)
+
+```{r}
+
+# fit the model
+model <- stm(doc, voc, 15, prevalence = ~ REGION + s(YEAR), data = meta, max.em.its = 15)
+
+# list top words for each topic
+labelTopics(model)
+
+# top documents for each topic
+findThoughts(model, texts = meta$TITLE, n = 2, topics = c(1:15))
+
+```
+
+## Question 3
+
+Run a fully-estimated model with larger `max.em.its` (e.g. $200$). Using the functions `labelTopics` and `findThoughts`, hand label the 15 topics. Hold these labels as a character vector called `labels`.
+
+```{r, cache=TRUE}
+
+# run model again but without maximum
+model2 <- stm(doc, voc, 15, prevalence = ~ REGION + s(YEAR), data = meta, max.em.its = 200)
+
+```
+
+```{r}
+
+# print topics
+labelTopics(model2)
+
+# print titles
+findThoughts(model2, texts = meta$TITLE, n = 2, topics = c(1:15))
+
+# create the different labels by hand
+labels <- c("fashion", "violence", "sports", "literature", "military", 
+            "protest", "careers", "sexual assault", "islam", "family",
+            "film", "politics", "medical", "conference discussion", "FGM")
+
+```
+
+
+## Question 4
+
+See how the topics are distributed in terms of their prevalence across region. Focus on a single topic of interest for you -- What do you notice about the distribution of topic X? 
+
+Use `plot.STM` on your model to summarize the corpus. Then `estimateEffect` to find the coefficients on the docs across regions --- "Asia", "EECA", "MENA", "Africa", "West", and "LA" --- and visualize the result using `plot.estimateEffect`. Briefly discuss the results in your own words.
+
+```{r}
+
+# summarize the corpus - find most common topics
+plot.STM(model2)
+
+est <- estimateEffect(1:15 ~ REGION + s(YEAR), meta = meta, model2)
+
+# name regions
+regions <- c("Asia", "EECA", "MENA", "Africa", "West", "LA")
+
+# create plot
+plot.estimateEffect(x = est, covariate = "REGION", topics = 3, method = "pointestimate", xlab = "Proportion of Overall Mentions", labeltype = "custom", custom.labels = regions, main = "Prevalence of Mentions of Women in Sport by Region")
+
+
+```
+The above plot shows how mentions of women playing sports (topic 3) are distributed by region. As you can see, the West has a larger share of mentions than other regions, followed by Latin America. The Middle East and Africa have the fewest mentions.
+
+
+## [Bonus] 
+
+Try different specification(s) of the prevalence model. Fully estimate the model until its convergence and explore the result. Briefly discuss the results: is there any new finding?
+
+```{r, cache=TRUE}
+
+# rerun the code but with different specifications - I now include the publication
+
+# fit the model
+model3 <- stm(doc, voc, 15, prevalence = ~ REGION + PUBLICATION + s(YEAR), data = meta, max.em.its = 200)
+
+# list top words for each topic
+# labelTopics(model)
+# 
+# # top documents for each topic
+# findThoughts(model3, texts = meta$TITLE, n = 2, topics = c(1:15))
+
+
+# summarize the corpus - find most common topics
+plot.STM(model3)
+
+est <- estimateEffect(1:15 ~ REGION + PUBLICATION, meta = meta, model3)
+
+# name regions
+pubs <- c("NYT", "WashPo")
+
+# create plot
+plot.estimateEffect(x = est, covariate = "PUBLICATION", topics = 3, method = "pointestimate", xlab = "Proportion of Overall Mentions", main = "Prevalence of Mentions of Women in Sport by Publication") 
+
+
+```
+
+Above I run the same code but instead for mentions by publication rather than region. I find that the NYT mentions women in sports more often than the Washington Post.
+
